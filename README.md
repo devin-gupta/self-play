@@ -1,2 +1,1 @@
 # self-play
-test
