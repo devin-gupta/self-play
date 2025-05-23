@@ -21,6 +21,7 @@ for t in range(100):
 
     # obs, reward, terminated, truncated, info = env.step(env.action_space.sample()) # random action
     obs, reward, terminated, truncated, info = env.step(episode.actions[t]) # dataset action
+    #print(info['step_task_completions'])
 
     if terminated or truncated:
         break
