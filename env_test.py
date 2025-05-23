@@ -18,17 +18,18 @@ episode = dataset.sample_episodes(n_episodes=1)[0]
 
 print(episode.actions['image'])
 
-# for t in range(100):
-#     env.render()
+for t in range(100):
+    env.render()
 
-#     # obs, reward, terminated, truncated, info = env.step(env.action_space.sample()) # random action
-#     obs, reward, terminated, truncated, info = env.step(episode.actions[t]) # dataset action
+    # obs, reward, terminated, truncated, info = env.step(env.action_space.sample()) # random action
+    obs, reward, terminated, truncated, info = env.step(episode.actions[t]) # dataset action
+    #print(info['step_task_completions'])
 
-#     if terminated or truncated:
-#         break
+    if terminated or truncated:
+        break
 
-#     if reward > 0:
-#         print(f"Action {t} gave us the following reward: {reward}")
+    if reward > 0:
+        print(f"Action {t} gave us the following reward: {reward}")
 
-# print(obs)
-# env.close()
+print(obs)
+env.close()

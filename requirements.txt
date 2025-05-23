@@ -23,7 +23,7 @@ minari==0.5.3
 mujoco==3.1.6
 numpy==2.2.6
 packaging==25.0
-pettingzoo==1.25.0
+pettingzoo>1.20.0
 pillow==11.2.1
 Pygments==2.19.1
 PyOpenGL==3.1.9
