@@ -35,9 +35,9 @@ class KitchenPairDataset(Dataset):
         """Generate frame pairs from all kitchen environment datasets."""
         # List of datasets to process
         dataset_names = [
-            'D4RL/kitchen/mixed-v2',
+            # 'D4RL/kitchen/mixed-v2',
             'D4RL/kitchen/complete-v2',
-            'D4RL/kitchen/partial-v2'
+            # 'D4RL/kitchen/partial-v2'
         ]
         
         all_truncated_episodes = []
@@ -161,7 +161,11 @@ class KitchenPairDataset(Dataset):
 if __name__ == "__main__":
     # 1. Try loading existing datasets first
     print("\n=== Loading/Creating datasets ===")
-    for k in [1, 3, 5]:
+    for k in [
+        # 1,
+        # 3,
+        5,
+    ]:
         print(f"\nTrying k={k}:")
         try:
             # Try to load existing dataset first
