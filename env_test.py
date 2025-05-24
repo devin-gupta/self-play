@@ -42,21 +42,23 @@ for t in range(100):
         goal_img = get_goal_img(goal_env, t, episode, num_steps_ahead=20)
         goal_update_timesteps.append(t)
     
-    # Create overlay visualization
-    plt.figure(figsize=(12, 6))
-    
-    # Plot current state as base image
-    plt.imshow(current_img)
-    
-    # Overlay goal state with transparency
-    plt.imshow(goal_img, alpha=0.5)
-    
-    plt.title(f'Current State (t={t}) with Goal Overlay')
-    plt.axis('off')
-    
-    # Save the visualization
-    plt.savefig(f'trajectory_images/step_{t:03d}.png')
-    plt.close()
+    visualization = True
+    if visualization == True:
+        # Create overlay visualization
+        plt.figure(figsize=(12, 6))
+        
+        # Plot current state as base image
+        plt.imshow(current_img)
+        
+        # Overlay goal state with transparency
+        plt.imshow(goal_img, alpha=0.5)
+        
+        plt.title(f'Current State (t={t}) with Goal Overlay')
+        plt.axis('off')
+        
+        # Save the visualization
+        plt.savefig(f'trajectory_images/step_{t:03d}.png')
+        plt.close()
     
     # Take step in environment
     obs, _, terminated, truncated, info = env.step(episode.actions[t])
