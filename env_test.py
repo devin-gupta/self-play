@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from PIL import Image
-from reinforcement.helper import get_reward
+from rl.helper import get_reward
 from copy import deepcopy
 
 # Load dataset and environment
