@@ -11,29 +11,24 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
 from .model import *
+from .utils import *
 
 # --- 1. Diffusion Hyperparameters & Scheduler ---
 TIMESTEPS = 1000  # Number of diffusion timesteps
 
-def get_linear_beta_schedule(timesteps):
-    """
-    Returns a linear beta schedule from beta_start to beta_end.
-    """
-    beta_start = 0.0001
-    beta_end = 0.02
-    return torch.linspace(beta_start, beta_end, timesteps)
-
-betas = get_linear_beta_schedule(TIMESTEPS)
+betas = get_linear_beta_schedule(beta_start=0.0001, beta_end=0.02, timesteps=TIMESTEPS)
 alphas = 1. - betas
 alphas_cumprod = torch.cumprod(alphas, axis=0) # alpha_bar
 alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1, 0), value=1.0) # alpha_bar_{t-1}
 
 # Precompute values needed for noising (Equation 4 in DDPM paper)
 # x_t = sqrt(alpha_bar_t) * x_0 + sqrt(1 - alpha_bar_t) * epsilon
-sqrt_alphas_cumprod = torch.sqrt(alphas_cumprod)
-sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - alphas_cumprod)
+precomputed = {
+    "sqrt_alphas_cumprod": torch.sqrt(alphas_cumprod),
+    "sqrt_one_minus_alphas_cumprod": torch.sqrt(1. - alphas_cumprod),
+}
 
-def add_noise_to_images(original_images, t, device):
+def add_noise_to_images(original_images, t, device, precomputed=None):
     """Adds noise to images x_0 to get x_t."""
     # original_images: [B, C, H, W]
     # t: [B] tensor of timesteps
@@ -41,29 +36,12 @@ def add_noise_to_images(original_images, t, device):
     noise = torch.randn_like(original_images, device=device) # epsilon
 
     # Gather coefficients for each t in the batch
-    sqrt_alphas_cumprod_t = sqrt_alphas_cumprod[t].to(device).view(batch_size, 1, 1, 1)
-    sqrt_one_minus_alphas_cumprod_t = sqrt_one_minus_alphas_cumprod[t].to(device).view(batch_size, 1, 1, 1)
+    sqrt_alphas_cumprod_t = precomputed["sqrt_alphas_cumprod"][t].to(device).view(batch_size, 1, 1, 1)
+    sqrt_one_minus_alphas_cumprod_t = precomputed["sqrt_one_minus_alphas_cumprod"][t].to(device).view(batch_size, 1, 1, 1)
 
     noisy_images = sqrt_alphas_cumprod_t * original_images + \
                    sqrt_one_minus_alphas_cumprod_t * noise
     return noisy_images, noise # Return noisy image and the noise that was added (target)
-
-# --- 2. Dataset ---
-class KitchenDataset(Dataset):
-    def __init__(self, k_step_future=1):
-        complete_dataset = minari.load_dataset('D4RL/kitchen/complete-v2')
-        mixed_dataset = minari.load_dataset('D4RL/kitchen/mixed-v2')
-        partial_dataset = minari.load_dataset('D4RL/kitchen/partial-v2')
-        self.dataset = [complete_dataset + mixed_dataset + partial_dataset]
-        self.current_dataset_idx = 0
-        self.num_samples = len(self.dataset[0])
-
-    def __len__(self):
-        return self.num_samples
-    
-    def _get_
-    
-    def __getitem__(self, idx):
         
 
 # --- 3. Training Configuration ---
@@ -116,7 +94,7 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
             t = torch.randint(0, TIMESTEPS, (current_img_batch.shape[0],), device=DEVICE).long()
 
             # Add noise to next_img_batch (x_0) to get x_t, and get the added noise (epsilon)
-            noisy_next_img, added_noise_epsilon = add_noise_to_images(next_img_batch, t, DEVICE)
+            noisy_next_img, added_noise_epsilon = add_noise_to_images(next_img_batch, t, DEVICE, precomputed)
 
             # Prepare model input: concatenate noisy_next_image and current_image
             model_input = torch.cat([noisy_next_img, current_img_batch], dim=1) # [B, 6, H, W]
