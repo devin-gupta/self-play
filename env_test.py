@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from PIL import Image
-from reinforcement.helper import get_reward_v1, get_reward_v2, get_goal_img
+from rl.helper import get_reward
 from copy import deepcopy
 import os
 
