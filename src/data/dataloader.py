@@ -41,7 +41,9 @@ class KitchenPairDataset(Dataset):
         # List of datasets to process
         dataset_names = [
             # 'D4RL/kitchen/mixed-v2',
+            # 'D4RL/kitchen/mixed-v2',
             'D4RL/kitchen/complete-v2',
+            # 'D4RL/kitchen/partial-v2'
             # 'D4RL/kitchen/partial-v2'
         ]
         
@@ -150,8 +152,8 @@ class KitchenPairDataset(Dataset):
         return len(self.pairs)
     
     def __getitem__(self, idx):
-        """Return a pair of frames (current, future)."""
-        current_frame, future_frame = self.pairs[idx]
+        """Return a pair of frames (current, future) with metadata."""
+        current_frame, future_frame, dataset, episode_num, current_step = self.pairs[idx]
         # Make copies of the arrays to avoid negative strides
         current_frame = current_frame.copy()
         future_frame = future_frame.copy()
@@ -161,13 +163,17 @@ class KitchenPairDataset(Dataset):
         # Convert from HWC to CHW format
         current_frame = current_frame.permute(2, 0, 1)
         future_frame = future_frame.permute(2, 0, 1)
-        return current_frame, future_frame
+        return current_frame, future_frame, dataset, episode_num, current_step
 
 # Example usage:
 if __name__ == "__main__":
     # 1. Try loading existing datasets first
     print("\n=== Loading/Creating datasets ===")
-    for k in [5]:
+    for k in [
+        # 1,
+        # 3,
+        5,
+    ]:
         print(f"\nTrying k={k}:")
         try:
             # Try to load existing dataset first with memory-efficient settings
