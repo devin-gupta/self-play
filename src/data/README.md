@@ -1,72 +1,67 @@
-# Kitchen Pair Dataset
+# Kitchen Environment Dataset
 
-This dataloader creates and manages pairs of frames from the D4RL kitchen environment for training frame prediction models.
+This module provides a PyTorch dataset for loading and processing frame pairs from the D4RL kitchen environment datasets.
 
-## Overview
+## Features
 
-The `KitchenPairDataset` class:
-- Loads episodes from three D4RL kitchen datasets (mixed, complete, and partial)
-- Tracks task completions and transitions
-- Creates pairs of frames (current frame, future frame) with configurable look-ahead steps (k=1,3,5)
-- Saves/loads the processed data to avoid recomputing
-- Provides progress tracking during dataset generation
-
-## Dataset Processing
-
-The dataloader processes data in three stages:
-1. **Dataset Loading**: Loads episodes from each D4RL kitchen dataset
-2. **Episode Processing**: For each episode:
-   - Tracks task completions and transitions
-   - Collects frames and actions
-   - Truncates at the last successful task completion
-3. **Pair Generation**: Creates frame pairs with configurable look-ahead steps
+- Loads data from multiple D4RL kitchen datasets:
+  - `D4RL/kitchen/mixed-v2`
+  - `D4RL/kitchen/complete-v2`
+  - `D4RL/kitchen/partial-v2`
+- Generates pairs of frames with configurable future step lookahead (k)
+- Automatically downloads and caches datasets
+- Supports dataset rebuilding with `force_rebuild=True`
+- Returns normalized tensors in CHW format
 
 ## Usage
 
 ```python
 from src.data.dataloader import KitchenPairDataset
-from torch.utils.data import DataLoader
 
-# Basic usage - load existing dataset or create new one
-dataset = KitchenPairDataset(
-    k_step_future=1,              # How many steps ahead to predict (1, 3, or 5)
-    data_dir="data/kitchen_pairs", # Where to save/load the data
-    force_rebuild=False           # Set to True to regenerate the dataset
-)
+# Load or create dataset with k=1 (default)
+dataset = KitchenPairDataset(k_step_future=1)
 
-# Create dataloader for training
-dataloader = DataLoader(
-    dataset,
-    batch_size=32,    # Adjust based on your GPU memory
-    shuffle=True,     # Shuffle for training
-    num_workers=4     # Parallel data loading
-)
+# Load with different k values
+dataset_k3 = KitchenPairDataset(k_step_future=3)
+dataset_k5 = KitchenPairDataset(k_step_future=5)
 
-# Use in training loop
-for current_frames, future_frames in dataloader:
-    # current_frames: [B, 3, H, W] tensor in [-1,1] range
-    # future_frames: [B, 3, H, W] tensor in [-1,1] range
-    # B = batch_size, H = 480, W = 480
+# Force rebuild dataset
+dataset = KitchenPairDataset(k_step_future=1, force_rebuild=True)
+```
+
+## Dataset Structure
+
+Each item in the dataset returns a tuple of:
+- `current_frame`: Tensor of shape [3, H, W] normalized to [-1, 1]
+- `future_frame`: Tensor of shape [3, H, W] normalized to [-1, 1]
+- `dataset`: Name of the source dataset
+- `episode_num`: Episode number
+- `current_step`: Current timestep
+
+## Data Processing
+
+1. For each dataset:
+   - Loads 5 episodes
+   - Processes each episode to collect frames and transitions
+   - Truncates at the last task transition
+2. Creates frame pairs with k-step lookahead
+3. Saves processed pairs to pickle files for faster loading
+4. Files are stored in `data/kitchen_pairs/pairs_k{k}.pkl`
+
+## Example
+
+```python
+# Create DataLoader
+dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+# Iterate over batches
+for current_frames, future_frames, datasets, episodes, current_steps in dataloader:
+    # current_frames: [B, 3, H, W]
+    # future_frames: [B, 3, H, W]
+    # datasets: List of dataset names
+    # episodes: List of episode numbers
+    # current_steps: List of timesteps
     ...
-
-# Example: Load multiple k values
-datasets = {}
-for k in [1, 3, 5]:
-    datasets[k] = KitchenPairDataset(
-        k_step_future=k,
-        force_rebuild=False  # Will load existing if available
-    )
-    print(f"Loaded {len(datasets[k])} pairs for k={k}")
-
-# Example: Force rebuild a specific k value
-dataset_k3 = KitchenPairDataset(
-    k_step_future=3,
-    force_rebuild=True  # Will regenerate the dataset
-)
-
-# Example: Access raw pairs (before tensor conversion)
-current_frame, future_frame = dataset.pairs[0]
-print(f"Raw frame shapes: {current_frame.shape}, {future_frame.shape}")  # (480, 480, 3)
 ```
 
 ## Data Format
