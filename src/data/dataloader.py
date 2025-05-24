@@ -62,7 +62,7 @@ class KitchenPairDataset(Dataset):
             print(f"Total episodes in dataset: {total_episodes}")
             
             # Get all episodes by sampling without replacement
-            episodes = dataset.sample_episodes(n_episodes=total_episodes)
+            episodes = dataset.sample_episodes(n_episodes=5)
             
             for idx, episode in enumerate(tqdm(episodes, desc=f"Processing {dataset_name} episodes", leave=False), start=1):
                 env.reset()
@@ -122,7 +122,13 @@ class KitchenPairDataset(Dataset):
             for t in range(T):
                 # Calculate future frame index, pad with last frame if needed
                 t2 = min(t + self.k, T - 1)  # This ensures we use the last frame for padding
-                pairs.append((F[t], F[t2]))
+                pairs.append((
+                    F[t],           # current frame
+                    F[t2],          # future frame
+                    ep['dataset'],  # dataset name
+                    ep_idx,         # episode number
+                    t               # current timestep
+                ))
         
         print(f"\nTotal episodes processed: {len(all_truncated_episodes)}")
         print(f"Total pairs created: {len(pairs)}")
@@ -144,8 +150,8 @@ class KitchenPairDataset(Dataset):
         return len(self.pairs)
     
     def __getitem__(self, idx):
-        """Return a pair of frames (current, future)."""
-        current_frame, future_frame = self.pairs[idx]
+        """Return a pair of frames (current, future) with metadata."""
+        current_frame, future_frame, dataset, episode_num, current_step = self.pairs[idx]
         # Make copies of the arrays to avoid negative strides
         current_frame = current_frame.copy()
         future_frame = future_frame.copy()
@@ -155,7 +161,7 @@ class KitchenPairDataset(Dataset):
         # Convert from HWC to CHW format
         current_frame = current_frame.permute(2, 0, 1)
         future_frame = future_frame.permute(2, 0, 1)
-        return current_frame, future_frame
+        return current_frame, future_frame, dataset, episode_num, current_step
 
 # Example usage:
 if __name__ == "__main__":
@@ -170,45 +176,9 @@ if __name__ == "__main__":
         try:
             # Try to load existing dataset first
             dataset = KitchenPairDataset(k_step_future=k, force_rebuild=False)
-            print(f"Successfully loaded existing dataset with {len(dataset)} pairs")
+            print(f"Successfully loaded existing dataset with {len(dataset.pairs)} pairs")
+                
         except FileNotFoundError:
             # If dataset doesn't exist, create it
             print(f"No existing dataset found for k={k}, creating new one...")
             dataset = KitchenPairDataset(k_step_future=k, force_rebuild=True)
-        
-        # Test the dataset with a DataLoader
-        if k == 1:  # Only test with k=1
-            print("\n=== Testing DataLoader batching ===")
-            print(f"\nTotal number of pairs: {len(dataset.pairs)}")
-            print(f"Each pair contains 2 frames (current, future)")
-            print("\nVerifying stepping between consecutive pairs:")
-            
-            # Check first few pairs to verify stepping
-            for i in range(min(5, len(dataset.pairs)-1)):  # -1 to avoid index error
-                current1, future1 = dataset.pairs[i]
-                current2, future2 = dataset.pairs[i+1]
-                
-                print(f"\nPair {i}:")
-                print(f"Current frame shape: {current1.shape}")
-                print(f"Future frame shape: {future1.shape}")
-                print(f"Pair {i+1}:")
-                print(f"Current frame shape: {current2.shape}")
-                print(f"Future frame shape: {future2.shape}")
-                
-                # Verify that future1 should be current2 for k=1
-                print(f"\nVerifying stepping:")
-                print(f"Future frame of pair {i} should be current frame of pair {i+1}")
-                print(f"Are they the same? {np.array_equal(future1, current2)}")
-                print("\n" + "="*50)  # Separator between pairs
-            
-            print("\n=== Testing DataLoader batching ===")
-            dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
-            for batch_idx, (current_frames, future_frames) in enumerate(dataloader):
-                print(f"\nBatch {batch_idx}:")
-                print(f"Current frames shape: {current_frames.shape}")  # Should be [B, 3, H, W]
-                print(f"Future frames shape: {future_frames.shape}")   # Should be [B, 3, H, W]
-                print(f"Value range: [{current_frames.min():.2f}, {current_frames.max():.2f}]")
-                
-                # Only show first batch
-                if batch_idx == 0:
-                    break

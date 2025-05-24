@@ -1,5 +1,6 @@
 trajectory_images/
 *.pkl
+**/.DS_Store
 
 .python-version
 
