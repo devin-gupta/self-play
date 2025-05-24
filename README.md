@@ -2,6 +2,7 @@
 
 ## Setup
 
+### uv
 This project uses [uv](https://github.com/astral-sh/uv) for dependency management. Download it using the standalone installer:
 ```
 # On macOS and Linux
@@ -22,3 +23,6 @@ Setup the dependencies:
 ```
 uv sync
 ```
+
+### Data
+We use [minari](https://minari.farama.org/)'s Kitchen environment to build our dataset. 
