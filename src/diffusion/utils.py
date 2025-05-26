@@ -26,3 +26,4 @@ def add_noise_to_images(original_images, t, device, precomputed=None):
     noisy_images = sqrt_alphas_cumprod_t * original_images + \
                    sqrt_one_minus_alphas_cumprod_t * noise
     return noisy_images, noise # Return noisy image and the noise that was added (target)
+

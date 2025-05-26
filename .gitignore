@@ -1,6 +1,8 @@
 trajectory_images/
 *.pkl
 **/.DS_Store
+checkpoints/
+tensorboard_logs/
 
 .python-version
 
