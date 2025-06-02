@@ -5,6 +5,7 @@ import pickle
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 import gc
 
@@ -18,7 +19,7 @@ except ImportError:
 
 class KitchenPairDataset(Dataset):
     def __init__(self, k_step_future=1, data_dir="data/kitchen_pairs", force_rebuild=False, 
-                 max_episodes_per_batch=5, max_frames_in_memory=200):
+                 max_episodes_per_batch=5, max_frames_in_memory=200, target_size=128):
         """
         Args:
             k_step_future: Number of steps to look ahead for the next frame
@@ -26,10 +27,13 @@ class KitchenPairDataset(Dataset):
             force_rebuild: If True, rebuild the dataset even if it exists
             max_episodes_per_batch: Maximum number of episodes to process at once
             max_frames_in_memory: Maximum number of frames to keep in memory
+            target_size: Size to resize images to (default: 128x128)
         """
         self.k = k_step_future
         self.data_dir = Path(data_dir)
-        self.pairs_file = self.data_dir / f"pairs_k{self.k}.pkl"
+        self.target_size = target_size
+        # Include target size in filename
+        self.pairs_file = self.data_dir / f"pairs_k{self.k}_{target_size}x{target_size}.pkl"
         self.max_episodes_per_batch = max_episodes_per_batch
         self.max_frames_in_memory = max_frames_in_memory
         
@@ -44,7 +48,33 @@ class KitchenPairDataset(Dataset):
             self.pairs = self._load_pairs()
             
         print(f"Loaded {len(self.pairs)} pairs with k={k_step_future}")
-        print(f"Memory usage: ~{len(self.pairs) * 1.4:.1f} MB (estimated)")
+        print(f"Images pre-resized to {target_size}x{target_size}")
+        
+        # Convert to tensors for faster access
+        self._convert_to_tensors()
+    
+    def _convert_to_tensors(self):
+        """Convert all pairs to pre-processed tensors for faster training."""
+        print("Converting to tensors and pre-processing images...")
+        converted_pairs = []
+        
+        # Check if MPS is available for potential optimizations
+        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        
+        for i, (current_frame, future_frame, dataset, episode_num, current_step) in enumerate(tqdm(self.pairs, desc="Converting to tensors")):
+            # Convert numpy arrays to tensors and normalize (fix negative stride issue)
+            current_tensor = torch.from_numpy(current_frame.copy()).float()
+            future_tensor = torch.from_numpy(future_frame.copy()).float()
+            
+            # Normalize to [-1, 1] and convert to CHW format
+            current_tensor = (current_tensor / 127.5 - 1).permute(2, 0, 1)  # [3, H, W]
+            future_tensor = (future_tensor / 127.5 - 1).permute(2, 0, 1)    # [3, H, W]
+            
+            # Keep tensors on CPU for storage efficiency, move to device during training
+            converted_pairs.append((current_tensor, future_tensor, dataset, episode_num, current_step))
+        
+        self.pairs = converted_pairs
+        print(f"Tensor conversion complete! (Device: {device})")
     
     def _generate_pairs(self):
         """Generate frame pairs from all kitchen environment datasets."""
@@ -154,12 +184,38 @@ class KitchenPairDataset(Dataset):
             cut = last_step + 1
             frames = frames[:cut]
         
+        # Resize all frames at once for efficiency
+        resized_frames = self._resize_frames_batch(frames)
+        
         # Create pairs for every frame
-        T = len(frames)
+        T = len(resized_frames)
         for t in range(T):
             t2 = min(t + self.k, T - 1)
             current_step = frame_offset + t  # Track absolute timestep in episode
-            pairs.append((frames[t], frames[t2], dataset_name, episode_num, current_step))
+            pairs.append((resized_frames[t], resized_frames[t2], dataset_name, episode_num, current_step))
+    
+    def _resize_frames_batch(self, frames):
+        """Resize a batch of frames efficiently."""
+        if not frames or frames[0].shape[:2] == (self.target_size, self.target_size):
+            return frames
+            
+        # Convert to tensor batch for efficient resizing
+        frames_tensor = torch.from_numpy(np.stack(frames)).float()  # [N, H, W, 3]
+        frames_tensor = frames_tensor.permute(0, 3, 1, 2)  # [N, 3, H, W]
+        
+        # Resize batch
+        resized_tensor = F.interpolate(
+            frames_tensor, 
+            size=(self.target_size, self.target_size), 
+            mode='bilinear', 
+            align_corners=False
+        )
+        
+        # Convert back to numpy
+        resized_tensor = resized_tensor.permute(0, 2, 3, 1)  # [N, H, W, 3]
+        resized_frames = [frame.numpy().astype(np.uint8) for frame in resized_tensor]
+        
+        return resized_frames
     
     def _save_pairs(self):
         """Save the generated pairs to a pickle file."""
@@ -178,17 +234,11 @@ class KitchenPairDataset(Dataset):
     
     def __getitem__(self, idx):
         """Return a pair of frames (current, future) with metadata."""
+        # Frames are already pre-processed tensors - just return them!
         current_frame, future_frame, dataset, episode_num, current_step = self.pairs[idx]
-        # Make copies of the arrays to avoid negative strides
-        current_frame = current_frame.copy()
-        future_frame = future_frame.copy()
-        # Convert to torch tensors and normalize to [-1, 1]
-        current_frame = torch.from_numpy(current_frame).float() / 127.5 - 1
-        future_frame = torch.from_numpy(future_frame).float() / 127.5 - 1
-        # Convert from HWC to CHW format
-        current_frame = current_frame.permute(2, 0, 1)
-        future_frame = future_frame.permute(2, 0, 1)
         return current_frame, future_frame, dataset, episode_num, current_step
+
+# Note: This is the optimized version of KitchenPairDataset
 
 # Example usage:
 if __name__ == "__main__":
@@ -204,7 +254,7 @@ if __name__ == "__main__":
             # Try to load existing dataset first with memory-efficient settings
             dataset = KitchenPairDataset(
                 k_step_future=k, 
-                force_rebuild=True,  # Force rebuild to use new format with metadata
+                force_rebuild=False,
                 max_episodes_per_batch=3,  # Process even fewer episodes at once
                 max_frames_in_memory=100   # Keep even fewer frames in memory
             )
@@ -230,10 +280,10 @@ if __name__ == "__main__":
                 dataset, 
                 batch_size=2,              # Smaller batch size
                 shuffle=True,
-                num_workers=2,             # Fewer workers
-                pin_memory=True,           # Use pinned memory for faster GPU transfer
-                persistent_workers=True,   # Keep workers alive between epochs
-                prefetch_factor=2          # Prefetch fewer batches
+                num_workers=0,             # Single-threaded to avoid macOS multiprocessing issues
+                pin_memory=False,          # Disabled for MPS
+                persistent_workers=False,  # Disabled for single-threaded
+                prefetch_factor=None       # Not needed for single-threaded
             )
             
             for batch_idx, (current_frames, future_frames, datasets, episode_nums, timesteps) in enumerate(dataloader):

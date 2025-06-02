@@ -9,6 +9,22 @@ from pathlib import Path
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import time
+import datetime
+import gc
+import json
+import math
+import os
+import sys
+from pathlib import Path
+from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
+import time
+
+import os
+from pathlib import Path
+import sys
+import time
+from tqdm import tqdm
 
 import minari
 import numpy as np
@@ -18,6 +34,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
 
 # Add the src directory to the path so we can import properly
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -56,8 +73,8 @@ DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 for key in precomputed:
     precomputed[key] = precomputed[key].to(DEVICE)
 
-IMG_RESOLUTION = 480 # Should match your data and model's initial_img_resolution
-BATCH_SIZE = 1 # Reduced for MPS memory constraints
+IMG_RESOLUTION = 128 # Reduced from 480 for much faster training
+BATCH_SIZE = 2 # Optimized for MPS with 128x128 images
 LEARNING_RATE = 1e-4 # A common starting point
 EPOCHS = 100 # Number of training epochs
 
@@ -225,6 +242,10 @@ model = ConditionalUNet(
 optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
 criterion = nn.MSELoss() # Loss between predicted noise and actual added noise
 
+# Mixed precision training for faster training
+scaler = torch.amp.GradScaler('cuda') if DEVICE.type == 'cuda' else None
+USE_AMP = DEVICE.type == 'cuda'  # Only use AMP on CUDA, not MPS
+
 # --- 5. Training Loop ---
 if __name__ == "__main__": # Guard for multiprocessing in DataLoader
     print(f"Using device: {DEVICE}")
@@ -249,9 +270,18 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
     train_dataset = KitchenPairDataset(
         k_step_future=5,  # Use the existing k=5 dataset
         data_dir="data/kitchen_pairs",
-        force_rebuild=False  # Use existing data
+        force_rebuild=False,  # Use existing data
+        target_size=IMG_RESOLUTION  # Use 128x128 pre-processed images
     )
-    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    train_dataloader = DataLoader(
+        train_dataset, 
+        batch_size=BATCH_SIZE, 
+        shuffle=True, 
+        num_workers=0,           # Single-threaded for stability on MPS
+        pin_memory=False,        # Disabled for MPS
+        persistent_workers=False, # Disabled for single-threaded
+        prefetch_factor=None      # Not needed for single-threaded
+    )
     
     latest_checkpoint = find_latest_checkpoint()
     if latest_checkpoint is not None:
@@ -278,6 +308,10 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
 
     print(f"Training dataset size: {len(train_dataset)} pairs")
     print(f"Starting training for {EPOCHS} epochs...")
+    
+    # Track training time
+    training_start_time = time.time()
+    print(f"Training started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     # Log hyperparameters to TensorBoard
     hyperparams = {
@@ -306,7 +340,7 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
                          leave=False, 
                          position=1)
         
-        for batch_idx, (current_img_batch, next_img_batch) in enumerate(batch_pbar):
+        for batch_idx, (current_img_batch, next_img_batch, datasets, episode_nums, timesteps) in enumerate(batch_pbar):
             optimizer.zero_grad()
 
             # Move data to device
@@ -322,16 +356,31 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
             # Prepare model input: concatenate noisy_next_image and current_image
             model_input = torch.cat([noisy_next_img, current_img_batch], dim=1) # [B, 6, H, W]
 
-            # Predict noise
-            predicted_noise_epsilon = model(model_input, t)
+            # Forward pass with optional mixed precision
+            if USE_AMP and scaler is not None:
+                with torch.amp.autocast('cuda'):
+                    predicted_noise_epsilon = model(model_input, t)
+                    loss = criterion(predicted_noise_epsilon, added_noise_epsilon)
+                
+                # Backward pass with gradient scaling
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                # Standard training
+                predicted_noise_epsilon = model(model_input, t)
+                loss = criterion(predicted_noise_epsilon, added_noise_epsilon)
+                loss.backward()
+                optimizer.step()
 
-            # Calculate loss
-            loss = criterion(predicted_noise_epsilon, added_noise_epsilon)
             total_loss += loss.item()
             num_batches += 1
-
-            loss.backward()
-            optimizer.step()
+            
+            # Memory cleanup every 10 batches
+            if batch_idx % 10 == 0:
+                gc.collect()
+                if DEVICE.type == 'mps':
+                    torch.mps.empty_cache()
 
             # TensorBoard logging
             if global_step % LOG_FREQ == 0:
@@ -390,9 +439,11 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
             'Best': '✓' if is_best else ''
         })
 
-        # Print epoch summary
+        # Print epoch summary with elapsed time
+        elapsed_time = time.time() - training_start_time
+        elapsed_str = str(datetime.timedelta(seconds=int(elapsed_time)))
         status = "*** NEW BEST ***" if is_best else ""
-        tqdm.write(f"Epoch [{epoch+1}/{EPOCHS}] - Avg Loss: {avg_epoch_loss:.6f} {status}")
+        tqdm.write(f"Epoch [{epoch+1}/{EPOCHS}] - Avg Loss: {avg_epoch_loss:.6f} - Elapsed: {elapsed_str} {status}")
 
         # Save checkpoint
         if (epoch + 1) % CHECKPOINT_FREQ == 0 or (epoch + 1) == EPOCHS or is_best:
@@ -409,7 +460,12 @@ if __name__ == "__main__": # Guard for multiprocessing in DataLoader
     epoch_pbar.close()
     tb_writer.close()
     
+    # Final training summary
+    total_training_time = time.time() - training_start_time
+    total_time_str = str(datetime.timedelta(seconds=int(total_training_time)))
+    
     print("Training complete.")
+    print(f"Total training time: {total_time_str}")
     print(f"Best loss achieved: {best_loss:.6f}")
     print(f"All checkpoints saved to: {CHECKPOINT_DIR}")
     print(f"TensorBoard logs saved to: {TENSORBOARD_LOG_DIR}")

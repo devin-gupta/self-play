@@ -46,4 +46,6 @@ dependencies = [
     "zipp==3.21.0",
     "torch>=2.7.0",
     "pympler>=1.1",
+    "tensorboard>=2.19.0",
+    "psutil>=7.0.0",
 ]
