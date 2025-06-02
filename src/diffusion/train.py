@@ -1,25 +1,10 @@
 """
 train.py
 """
-import json
-import math
-import os
-import sys
-from pathlib import Path
-from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
-import time
 import datetime
 import gc
 import json
 import math
-import os
-import sys
-from pathlib import Path
-from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
-import time
-
 import os
 from pathlib import Path
 import sys
@@ -36,12 +21,13 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 
+
 # Add the src directory to the path so we can import properly
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from diffusion.model import *
 from diffusion.utils import *
-from data.dataloader import KitchenPairDataset
+from data_utils.dataloader import KitchenPairDataset
 
 # --- Diffusion Hyperparameters & Scheduler ---
 TIMESTEPS = 1000  # Number of diffusion timesteps
