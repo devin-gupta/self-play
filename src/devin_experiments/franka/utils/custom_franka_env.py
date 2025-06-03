@@ -34,12 +34,14 @@ class CustomFrankaEnv(gym.Wrapper):
 
         original_reward -= 0.01  # Small penalty for each step to encourage efficiency
 
-        if info.get('microwave_task_success', False):
-            original_reward += 100.0 # Big reward for success!
-            print("Microwave task completed! Giving large reward.")
+        kettle_position = observation['observation'][32:35]
+        # Penalty for distance from kettle's target position
+        kettle_target_position = np.array([-0.23, 0.75, 1.62])
+        original_reward -= np.linalg.norm(kettle_position - kettle_target_position) * 0.1
 
-        if action.mean() > 0.4:
-            terminated = True
+        if info.get('kettle_task_success', False):
+            original_reward += 100.0 # Big reward for success!
+            print("Kettle task completed! Giving large reward.") # Corrected print statement
 
         return observation, original_reward, terminated, truncated, info
 

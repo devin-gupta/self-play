@@ -6,7 +6,7 @@ import random
 
 # --- Q-Network Definition ---
 class QNetwork(nn.Module):
-    def __init__(self, obs_size, action_size, device): # Add 'device' parameter
+    def __init__(self, obs_size, action_size): # Add 'device' parameter
         super(QNetwork, self).__init__()
         # Define a simple feed-forward neural network
         self.fc1 = nn.Linear(obs_size, 128) # First fully connected layer
@@ -14,7 +14,6 @@ class QNetwork(nn.Module):
         self.fc2 = nn.Linear(128, 128)     # Second fully connected layer
         self.relu2 = nn.ReLU()             # ReLU activation function
         self.fc3 = nn.Linear(128, action_size) # Output layer, size equals number of discrete actions
-        self.to(device) # Move the entire network to the specified device
 
     def forward(self, x):
         # Forward pass through the network
@@ -24,32 +23,31 @@ class QNetwork(nn.Module):
 
 # --- Replay Buffer ---
 class ReplayBuffer:
-    def __init__(self, capacity, device): # Add 'device' parameter
+    def __init__(self, capacity):
         # Initialize a deque (double-ended queue) with a maximum capacity
         self.buffer = deque(maxlen=capacity)
-        self.device = device # Store the device
+        # We don't store the device here if the buffer only handles NumPy arrays.
+        # The device is only relevant when converting to tensors in the agent.
+        # self.device = device # Remove this line if not needed here
 
     def push(self, state, action, reward, next_state, done):
         # Add a new experience tuple to the buffer.
-        # Store as NumPy arrays to avoid immediate tensor conversion and device transfer,
-        # which can be memory inefficient if the buffer is very large.
+        # state and next_state are expected to be NumPy arrays when pushed.
         self.buffer.append((state, action, reward, next_state, done))
 
     def sample(self, batch_size):
         # Randomly sample a batch of experiences from the buffer
         batch = random.sample(self.buffer, batch_size)
+
         # Unpack the batch into separate lists of states, actions, etc.
+        # These will remain as their original types (NumPy arrays for states/next_states,
+        # and Python primitives for action, reward, done).
         states, actions, rewards, next_states, dones = zip(*batch)
 
-        # Convert to PyTorch tensors and move them to the specified device
-        return (
-            torch.tensor(np.array(states), dtype=torch.float32).to(self.device),
-            torch.tensor(actions, dtype=torch.long).to(self.device),
-            torch.tensor(rewards, dtype=torch.float32).to(self.device),
-            torch.tensor(np.array(next_states), dtype=torch.float32).to(self.device),
-            # Dones should be float for multiplication with gamma * next_q_values
-            torch.tensor(dones, dtype=torch.float32).to(self.device)
-        )
+        # Return them as lists of NumPy arrays or Python lists of primitives.
+        # The conversion to PyTorch tensors and moving to the device
+        # will now happen in the DQNAgent.learn() method.
+        return list(states), list(actions), list(rewards), list(next_states), list(dones)
 
     def __len__(self):
         # Return the current size of the buffer
