@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="mps" if torch.backends.mps.is_available() else "cpu", 
                         choices=['cpu', 'mps', 'cuda'], help="Device to use for training.")
     parser.add_argument("--dataset_dir", type=str, default="data/kitchen_pairs", help="Root directory for the dataset.")
-    parser.add_argument("--k_step_future", type=int, default=5, help="k-step future for KitchenPairDataset.")
+    parser.add_argument("--k_step_future", type=int, default=3, help="k-step future for KitchenPairDataset.")
     parser.add_argument("--force_rebuild_dataset", action="store_true", help="Force rebuild of the dataset.")
     parser.add_argument("--num_workers_loader", type=int, default=0, help="Number of DataLoader workers.")
 
@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--beta_end", type=float, default=0.02, help="Beta end value for linear schedule.")
 
     # --- Model Architecture (Grayscale: in_channels=2, out_channels=1 are fixed) ---
-    parser.add_argument("--img_resolution", type=int, default=128, help="Image resolution for training and model.")
+    parser.add_argument("--img_resolution", type=int, default=120, help="Image resolution for training and model.")
     parser.add_argument("--model_base_channels", type=int, default=32, help="Base channels for the U-Net.")
     parser.add_argument("--model_channel_mults", type=str, default="1,2,3", help="Channel multipliers (comma-separated string, e.g., '1,2,3').")
     parser.add_argument("--model_num_res_blocks", type=int, default=1, help="Number of residual blocks per U-Net level.")
@@ -82,7 +82,7 @@ def parse_args() -> argparse.Namespace:
                         choices=['latest', 'best', 'none'], help="Which checkpoint to resume from ('none' for no resume). Can also be a specific path.")
 
     # --- TensorBoard Logging ---
-    parser.add_argument("--tensorboard_log_dir", type=str, default="data/diffusion/tensorboard_logs_grayscale", 
+    parser.add_argument("--tensorboard_log_dir", type=str, default="data/diffusion/tensorboard_logs", 
                         help="Directory for TensorBoard logs.")
     parser.add_argument("--tensorboard_run_name_prefix", type=str, default="diffusion_grayscale_train", 
                         help="Prefix for TensorBoard run name.")
