@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 import gc
+import argparse
 
 try:
     import psutil
@@ -240,56 +241,67 @@ class KitchenPairDataset(Dataset):
 if __name__ == "__main__":
     # 1. Try loading existing datasets first
     print("\n=== Loading/Creating datasets ===")
-    for k in [
-        # 5, 
-        10, # Added k=10
-    ]:
-        print(f"\nTrying k={k}:")
-        try:
-            # Try to load existing dataset first with memory-efficient settings
-            dataset = KitchenPairDataset(
-                k_step_future=k, 
-                force_rebuild=False,
-                max_episodes_per_batch=3,  # Process even fewer episodes at once
-                max_frames_in_memory=100   # Keep even fewer frames in memory
-            )
-            print(f"Successfully loaded existing dataset with {len(dataset)} pairs")
-        except FileNotFoundError:
-            # If dataset doesn't exist, create it
-            print(f"No existing dataset found for k={k}, creating new one...")
-            dataset = KitchenPairDataset(
-                k_step_future=k, 
-                force_rebuild=True,
-                max_episodes_per_batch=3,  # Keep these memory-efficient settings for creation
-                max_frames_in_memory=100   # Keep these memory-efficient settings for creation
-            )
+    
+    # --- Add argument parsing ---
+    parser = argparse.ArgumentParser(description="Load or generate Kitchen dataset pairs.")
+    parser.add_argument(
+        "--k", 
+        type=int, 
+        default=10,  # Default k value
+        help="Number of steps to look ahead for the future frame (k_step_future)."
+    )
+    parser.add_argument(
+        "--force_rebuild",
+        action="store_true",
+        help="Force rebuild the dataset even if a pre-existing one is found."
+    )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="data/kitchen_pairs",
+        help="Directory to store/load the dataset."
+    )
+    parser.add_argument(
+        "--target_size",
+        type=int,
+        default=256,
+        help="Target size to resize images to (e.g., 256 for 256x256)."
+    )
+
+    args = parser.parse_args()
+    # --- End argument parsing ---
+
+    # Use the parsed k value
+    k_value = args.k
+    print(f"\nProcessing for k={k_value}:")
+    
+    try:
+        # Try to load existing dataset first with memory-efficient settings
+        dataset = KitchenPairDataset(
+            k_step_future=k_value,
+            data_dir=args.data_dir,
+            force_rebuild=args.force_rebuild,
+            max_episodes_per_batch=2, # Reduce for memory efficiency if needed
+            max_frames_in_memory=100, # Reduce for memory efficiency if needed
+            target_size=args.target_size 
+        )
         
-        # Test the dataset with a memory-efficient DataLoader
-        if k == 10:  # Test with k=10
-            print("\n=== Testing DataLoader batching (k=10) ===")
-            print(f"\nTotal number of pairs: {len(dataset.pairs)}")
-            print(f"Each pair contains 2 frames (current, future)")
-            
-            # Create a memory-efficient DataLoader
-            dataloader = DataLoader(
-                dataset, 
-                batch_size=2,              # Smaller batch size
-                shuffle=True,
-                num_workers=0,             # Single-threaded to avoid macOS multiprocessing issues
-                pin_memory=False,          # Disabled for MPS
-                persistent_workers=False,  # Disabled for single-threaded
-                prefetch_factor=None       # Not needed for single-threaded
-            )
-            
-            for batch_idx, (current_frames, future_frames, datasets, episode_nums, timesteps) in enumerate(dataloader):
-                print(f"\nBatch {batch_idx}:")
-                print(f"Current frames shape: {current_frames.shape}")
-                print(f"Future frames shape: {future_frames.shape}")
-                print(f"Value range: [{current_frames.min():.2f}, {current_frames.max():.2f}]")
-                print(f"Datasets: {datasets}")
-                print(f"Episode numbers: {episode_nums}")
-                print(f"Timesteps: {timesteps}")
-                
-                # Only show first batch
-                if batch_idx == 0:
-                    break
+        print(f"\n--- Dataset for k={k_value} (size: {args.target_size}x{args.target_size}) ---")
+        print(f"Total pairs: {len(dataset)}")
+        
+        # Optional: Get a sample and print its shape
+        if len(dataset) > 0:
+            current_frame, future_frame, _, _, _ = dataset[0]
+            print(f"Sample current_frame shape: {current_frame.shape}")
+            print(f"Sample future_frame shape: {future_frame.shape}")
+
+            # Verify tensor properties (optional)
+            print(f"Current frame dtype: {current_frame.dtype}, min: {current_frame.min():.2f}, max: {current_frame.max():.2f}")
+            print(f"Future frame dtype: {future_frame.dtype}, min: {future_frame.min():.2f}, max: {future_frame.max():.2f}")
+
+    except Exception as e:
+        print(f"Error processing for k={k_value}: {e}")
+        import traceback
+        traceback.print_exc()
+
+    print("\n=== Dataset processing complete. ===")
