@@ -62,10 +62,16 @@ class HindsightReplayBuffer(ReplayBuffer):
                 self.add(states[t], actions[t], hindsight_reward, next_states[t], hindsight_goal, dones[t])
     
     def compute_reward(self, achieved_goal, desired_goal):
-        """
-        Compute reward based on distance between achieved and desired goals
-        """
-        # Using negative L2 distance as reward
-        diff = achieved_goal.astype(np.float32) - desired_goal.astype(np.float32)
+        # Reward is negative L2 distance between current and goal image.
+        achieved_goal_f = achieved_goal.astype(np.float32)
+        desired_goal_f = desired_goal.astype(np.float32)
+
+        diff = achieved_goal_f - desired_goal_f
+        
+        # Flatten and compute L2 norm. This handles both single and batch images.
         norm_diff = np.linalg.norm(diff.reshape(diff.shape[0], -1) if diff.ndim == 4 else diff.flatten())
-        return -norm_diff / 255.0  # Normalize by maximum pixel value 
+        
+        # Simple normalization by maximum pixel value.
+        reward = (-norm_diff / 255.0 + 70) * 0.1
+        
+        return float(reward) if np.isscalar(reward) else reward.astype(np.float64)

@@ -28,10 +28,8 @@ env = make_vec_env(
 model = SAC(
    'MultiInputPolicy', 
    env, 
-   replay_buffer_class=HerReplayBuffer,
    verbose=1,
-   buffer_size=int(1e4),
-   learning_starts=100,
+   buffer_size=50_000,
 ).learn(5000)
 
 # Test the trained agent

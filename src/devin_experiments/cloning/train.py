@@ -9,12 +9,12 @@ from utils.custom_franka_env import CustomFrankaEnv # Import your custom environ
 from utils.ac_agent import ACAgent # Import your agent
 from utils.franka_viewer import FrankaKitchenViewer
 
-def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3, log_dir='runs/franka_training/2'):
+def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3, log_dir='runs/franka_training/5'):
     # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir=log_dir)
     
     # Initialize viewer
-    viewer = FrankaKitchenViewer(title="Franka Kitchen Training")
+    # viewer = FrankaKitchenViewer(title="Franka Kitchen Training")
     
     obs_shape = env.observation_space["observation"].shape
     action_dim = env.action_space.shape[0]
@@ -56,8 +56,8 @@ def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3,
                 goals_history.append(goal)
 
                 # Render and display the frame
-                frame = env.render()
-                viewer.update(frame, step=steps, reward=reward)
+                # frame = env.render()
+                # viewer.update(frame, step=steps, reward=reward)
 
                 steps += 1
                 state = next_state
@@ -103,7 +103,7 @@ def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3,
         # Clean up
         writer.close()
         env.close()
-        viewer.close()
+        # viewer.close()
 
     return agent, episode_rewards
 
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     env = CustomFrankaEnv(dummy_base_env, goal_step_offset=2)
 
     print("Starting training...")
-    trained_agent, rewards_history = train_agent(env, num_episodes=10, actor_lr=0.0001, critic_lr=0.001)
+    trained_agent, rewards_history = train_agent(env, num_episodes=5000, actor_lr=0.01, critic_lr=0.01)
     print("Training finished.")
 
     # Plot rewards

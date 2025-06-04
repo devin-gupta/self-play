@@ -57,7 +57,6 @@ class CustomFrankaEnv(gym.Wrapper):
             return observation
         else:
             print('Observation is not in the observation space')
-            exit()
 
     def compute_reward(self, achieved_goal, desired_goal, info):
 
