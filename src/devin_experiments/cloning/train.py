@@ -41,7 +41,7 @@ def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3,
             
             steps = 0
             
-            while not done and steps < 25:
+            while not done and steps <= 7:
                 action, log_prob = agent.select_action(state)
                 
                 next_obs_dict, reward, terminated, truncated, _ = env.step(action)
@@ -109,10 +109,10 @@ def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3,
 
 if __name__ == '__main__':
     dummy_base_env = gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='rgb_array')
-    env = CustomFrankaEnv(dummy_base_env, goal_step_offset=3)
+    env = CustomFrankaEnv(dummy_base_env, goal_step_offset=2)
 
     print("Starting training...")
-    trained_agent, rewards_history = train_agent(env, num_episodes=100, actor_lr=0.0001, critic_lr=0.001)
+    trained_agent, rewards_history = train_agent(env, num_episodes=10, actor_lr=0.0001, critic_lr=0.001)
     print("Training finished.")
 
     # Plot rewards
