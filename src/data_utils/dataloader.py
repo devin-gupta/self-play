@@ -18,16 +18,16 @@ except ImportError:
     print("Install with: pip install psutil")
 
 class KitchenPairDataset(Dataset):
-    def __init__(self, k_step_future=1, data_dir="data/kitchen_pairs", force_rebuild=False, 
-                 max_episodes_per_batch=5, max_frames_in_memory=200, target_size=128):
+    def __init__(self, k_step_future=10, data_dir="data/kitchen_pairs", force_rebuild=False, 
+                 max_episodes_per_batch=5, max_frames_in_memory=200, target_size=256):
         """
         Args:
-            k_step_future: Number of steps to look ahead for the next frame
+            k_step_future: Number of steps to look ahead for the next frame (default: 10)
             data_dir: Directory to store/load the dataset
             force_rebuild: If True, rebuild the dataset even if it exists
             max_episodes_per_batch: Maximum number of episodes to process at once
             max_frames_in_memory: Maximum number of frames to keep in memory
-            target_size: Size to resize images to (default: 128x128)
+            target_size: Size to resize images to (default: 256x256)
         """
         self.k = k_step_future
         self.data_dir = Path(data_dir)
@@ -80,9 +80,7 @@ class KitchenPairDataset(Dataset):
         """Generate frame pairs from all kitchen environment datasets."""
         # List of datasets to process
         dataset_names = [
-            # 'D4RL/kitchen/mixed-v2',
             'D4RL/kitchen/complete-v2',
-            # 'D4RL/kitchen/partial-v2'
         ]
         
         all_pairs = []
@@ -148,10 +146,8 @@ class KitchenPairDataset(Dataset):
                         # Clear frames immediately after processing
                         frames.clear()
                     
-                    if (idx + 1) % 5 == 0:  # More frequent reporting
-                        print(f"\n[Dataset: {dataset_name}, Episode {batch_start + idx + 1}]")
-                        print(f"Transitions = {transitions}")
-                        print(f"Batch pairs so far: {len(batch_pairs)}")
+                    if (idx + 1) % 20 == 0:  # Reduced frequency of reporting
+                        print(f"\n[Dataset: {dataset_name}, Episode {batch_start + idx + 1} processed in current batch]")
                         
                         # Memory monitoring
                         if PSUTIL_AVAILABLE:
@@ -245,9 +241,8 @@ if __name__ == "__main__":
     # 1. Try loading existing datasets first
     print("\n=== Loading/Creating datasets ===")
     for k in [
-        # 1,
-        # 3,
-        5,
+        # 5, 
+        10, # Added k=10
     ]:
         print(f"\nTrying k={k}:")
         try:
@@ -265,13 +260,13 @@ if __name__ == "__main__":
             dataset = KitchenPairDataset(
                 k_step_future=k, 
                 force_rebuild=True,
-                max_episodes_per_batch=3,
-                max_frames_in_memory=100
+                max_episodes_per_batch=3,  # Keep these memory-efficient settings for creation
+                max_frames_in_memory=100   # Keep these memory-efficient settings for creation
             )
         
         # Test the dataset with a memory-efficient DataLoader
-        if k == 5:  # Only test with k=5
-            print("\n=== Testing DataLoader batching ===")
+        if k == 10:  # Test with k=10
+            print("\n=== Testing DataLoader batching (k=10) ===")
             print(f"\nTotal number of pairs: {len(dataset.pairs)}")
             print(f"Each pair contains 2 frames (current, future)")
             
