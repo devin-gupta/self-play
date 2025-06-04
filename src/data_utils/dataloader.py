@@ -6,6 +6,7 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.nn.functional as F
+import torchvision.transforms.functional as TF # Added for grayscaling
 from tqdm import tqdm
 import gc
 import argparse
@@ -49,33 +50,7 @@ class KitchenPairDataset(Dataset):
             self.pairs = self._load_pairs()
             
         print(f"Loaded {len(self.pairs)} pairs with k={k_step_future}")
-        print(f"Images pre-resized to {target_size}x{target_size}")
-        
-        # Convert to tensors for faster access
-        self._convert_to_tensors()
-    
-    def _convert_to_tensors(self):
-        """Convert all pairs to pre-processed tensors for faster training."""
-        print("Converting to tensors and pre-processing images...")
-        converted_pairs = []
-        
-        # Check if MPS is available for potential optimizations
-        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-        
-        for i, (current_frame, future_frame, dataset, episode_num, current_step) in enumerate(tqdm(self.pairs, desc="Converting to tensors")):
-            # Convert numpy arrays to tensors and normalize (fix negative stride issue)
-            current_tensor = torch.from_numpy(current_frame.copy()).float()
-            future_tensor = torch.from_numpy(future_frame.copy()).float()
-            
-            # Normalize to [-1, 1] and convert to CHW format
-            current_tensor = (current_tensor / 127.5 - 1).permute(2, 0, 1)  # [3, H, W]
-            future_tensor = (future_tensor / 127.5 - 1).permute(2, 0, 1)    # [3, H, W]
-            
-            # Keep tensors on CPU for storage efficiency, move to device during training
-            converted_pairs.append((current_tensor, future_tensor, dataset, episode_num, current_step))
-        
-        self.pairs = converted_pairs
-        print(f"Tensor conversion complete! (Device: {device})")
+        print(f"Images pre-resized to {target_size}x{target_size}, grayscaled, and stored as normalized tensors.")
     
     def _generate_pairs(self):
         """Generate frame pairs from all kitchen environment datasets."""
@@ -192,27 +167,51 @@ class KitchenPairDataset(Dataset):
             pairs.append((resized_frames[t], resized_frames[t2], dataset_name, episode_num, current_step))
     
     def _resize_frames_batch(self, frames):
-        """Resize a batch of frames efficiently."""
-        if not frames or frames[0].shape[:2] == (self.target_size, self.target_size):
+        """Resize a batch of frames, convert to grayscale, normalize, and return as tensors."""
+        if not frames:
+            return [] # Return empty list if no frames
+        
+        # Check if already in the desired tensor format (e.g., if loaded from a new pickle)
+        # This check is more for robustness if old data format handling was mixed, but with removal of _convert_to_tensors,
+        # this function will primarily deal with numpy arrays from env.render()
+        if isinstance(frames[0], torch.Tensor) and frames[0].shape[0] == 1 and len(frames[0].shape) == 3 : # CHW [1, H, W]
+             # Assuming if the first is a tensor of [1,H,W], they all are and are already processed
+             # This case should ideally not be hit if _convert_to_tensors is removed and generation is clean.
+            print("Warning: _resize_frames_batch received tensors, assuming already processed.")
             return frames
-            
-        # Convert to tensor batch for efficient resizing
-        frames_tensor = torch.from_numpy(np.stack(frames)).float()  # [N, H, W, 3]
-        frames_tensor = frames_tensor.permute(0, 3, 1, 2)  # [N, 3, H, W]
+
+        # Convert list of HWC NumPy arrays to tensor batch [N, H, W, 3]
+        frames_np = np.stack(frames) # Expects list of arrays of same shape
+        frames_tensor = torch.from_numpy(frames_np.copy()).float() # Use .copy() if frames_np is from a non-writable buffer
+        
+        # Permute to [N, 3, H, W] for PyTorch operations
+        frames_tensor = frames_tensor.permute(0, 3, 1, 2)
         
         # Resize batch
-        resized_tensor = F.interpolate(
-            frames_tensor, 
-            size=(self.target_size, self.target_size), 
-            mode='bilinear', 
-            align_corners=False
-        )
+        if frames_tensor.shape[2] != self.target_size or frames_tensor.shape[3] != self.target_size:
+            resized_tensor = F.interpolate(
+                frames_tensor, 
+                size=(self.target_size, self.target_size), 
+                mode='bilinear', 
+                align_corners=False
+            )
+        else:
+            resized_tensor = frames_tensor # No resize needed
+
+        # Convert to Grayscale: TF.rgb_to_grayscale expects [C, H, W] or [B, C, H, W]
+        # It outputs [1, H, W] or [B, 1, H, W]
+        grayscaled_tensor = TF.rgb_to_grayscale(resized_tensor) # Output: [N, 1, H, W]
         
-        # Convert back to numpy
-        resized_tensor = resized_tensor.permute(0, 2, 3, 1)  # [N, H, W, 3]
-        resized_frames = [frame.numpy().astype(np.uint8) for frame in resized_tensor]
+        # Normalize to [-1, 1] (from [0, 255] range originally, interpolate keeps it in similar range)
+        # Grayscale output from TF.rgb_to_grayscale will be in the range of the input (e.g. 0-255 for uint8 input).
+        # Since we converted to float initially, values are 0-255.
+        normalized_tensor = (grayscaled_tensor / 127.5) - 1.0
         
-        return resized_frames
+        # Detach from computation graph and move to CPU for storage in self.pairs
+        # Split the batch into a list of individual tensors [1, H, W]
+        processed_frames_list = [t.cpu().detach() for t in torch.unbind(normalized_tensor, dim=0)]
+        
+        return processed_frames_list
     
     def _save_pairs(self):
         """Save the generated pairs to a pickle file."""

@@ -46,8 +46,8 @@ def main(args: argparse.Namespace) -> None:
     attention_resolutions_tuple = tuple(map(int, args.model_attention_resolutions.split(',')))
 
     model = ConditionalUNet(
-        in_img_channels=6,  # 3 for noisy_next_img (proxy: future_frame), 3 for current_img (current_frame)
-        out_img_channels=3, # For predicted noise
+        in_img_channels=args.model_in_channels,
+        out_img_channels=args.model_out_channels,
         base_channels=args.model_base_channels,
         channel_mults=channel_mults_tuple,
         num_res_blocks_per_level=args.model_num_res_blocks,
@@ -154,10 +154,11 @@ def main(args: argparse.Namespace) -> None:
         # For CPU-based backends like fbgemm/qnnpack, quantization should happen on CPU.
         # The benchmark for the PTQ model will also run on CPU.
         original_device_for_benchmark = device # Save the original device for final report if not CPU
+        model_on_cpu_for_ptq = False
         if device.type != 'cpu':
-            print(f"Warning: PTQ static quantization with backend '{args.ptq_backend}' is CPU-focused. Forcing model and PTQ benchmark to CPU.")
+            print(f"Warning: PTQ static quantization with backend '{args.ptq_backend}' is CPU-focused. Temporarily moving model to CPU for PTQ steps.")
             model.to('cpu')
-            device = torch.device('cpu') # Update device for PTQ steps and benchmark
+            model_on_cpu_for_ptq = True # Flag that model was moved
         
         # Ensure model is in eval mode for quantization
         model.eval()
@@ -196,9 +197,10 @@ def main(args: argparse.Namespace) -> None:
                 if i >= args.ptq_num_calibration_batches:
                     break
                 current_frames, future_frames, _, episode_current_steps, _ = batch_data
-                # Ensure data is on CPU if model was moved to CPU
-                x_concat = torch.cat((future_frames, current_frames), dim=1).to(model.conv_in.weight.device) 
-                time_input = episode_current_steps.float().to(model.conv_in.weight.device)
+                # Ensure data is on CPU if model was moved to CPU for PTQ
+                ptq_device = 'cpu' if model_on_cpu_for_ptq else device
+                x_concat = torch.cat((future_frames, current_frames), dim=1).to(ptq_device) 
+                time_input = episode_current_steps.float().to(ptq_device)
                 model(x_concat, time_input)
                 if (i+1) % 1 == 0:
                     print(f"  Calibration batch {i+1}/{args.ptq_num_calibration_batches} completed.")
@@ -208,11 +210,20 @@ def main(args: argparse.Namespace) -> None:
         torch.quantization.convert(model, inplace=True)
         print("Model converted to quantized version (INT8).")
         
-        # Update device for benchmark if it was changed for quantization
-        if args.quantize_ptq_static and original_device_for_benchmark.type != 'cpu':
-             print(f"Benchmarking PTQ model on CPU as quantization was performed on CPU (original device was {original_device_for_benchmark.type}).")
-             # device variable is already updated to cpu if we entered the block above
-        
+        # Restore model to original device if it was moved for PTQ, unless benchmark is forced to CPU
+        if model_on_cpu_for_ptq:
+            if args.benchmark_ptq_on_cpu:
+                print(f"Benchmarking PTQ model on CPU as requested by --benchmark_ptq_on_cpu.")
+                device = torch.device('cpu') # Ensure device for benchmark is CPU
+            else:
+                print(f"Moving PTQ model back to original device: {original_device_for_benchmark} for benchmarking.")
+                model.to(original_device_for_benchmark)
+                device = original_device_for_benchmark # Ensure device for benchmark is the original
+        elif args.benchmark_ptq_on_cpu and device.type != 'cpu': # Model was not moved, but user wants CPU benchmark
+             print(f"Warning: Model was not on CPU for PTQ, but --benchmark_ptq_on_cpu is set. Moving to CPU for benchmark.")
+             model.to('cpu')
+             device = torch.device('cpu')
+
         # Re-calculate model size for the quantized model
         # Note: get_model_size_info might not be perfectly accurate for quantized models
         # as it sums parameter element_size which might still report FP32 for packed params.
