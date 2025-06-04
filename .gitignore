@@ -4,6 +4,7 @@ trajectory_images/
 checkpoints/
 tensorboard_logs/
 .cursor/
+runs/
 
 .python-version
 
