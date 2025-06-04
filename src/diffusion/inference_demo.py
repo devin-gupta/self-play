@@ -190,7 +190,7 @@ class DiffusionInference:
 
 def main():
     # Configuration
-    CHECKPOINT_PATH = "data/diffusion/checkpoints/best_model.pth"  # Adjust path as needed
+    CHECKPOINT_PATH = "data/diffusion/checkpoints/model_v1/best_model.pth"  # Adjust path as needed
     DATASET_NAME = 'D4RL/kitchen/complete-v2'
     EPISODE_IDX = 0
     MAX_STEPS = 30  # Process first 30 steps

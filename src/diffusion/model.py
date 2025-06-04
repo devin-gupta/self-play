@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+import torch.quantization
 
 
 class SinusoidalPositionalEncoding(nn.Module):
@@ -136,6 +137,9 @@ class ConditionalUNet(nn.Module):
     ):
         super().__init__()
 
+        self.quant = torch.quantization.QuantStub()
+        self.dequant = torch.quantization.DeQuantStub()
+
         self.initial_img_resolution = initial_img_resolution
         self.time_emb_dim = time_emb_dim
         self.channel_mults = channel_mults
@@ -220,12 +224,14 @@ class ConditionalUNet(nn.Module):
         # x_concat: [B, 6, H, W]
         # time: [B]
         
+        x_q = self.quant(x_concat)
+
         # 1. Time embedding
         t_emb = self.time_positional_encoding(time)
         t_emb = self.time_mlp(t_emb)  # [B, time_emb_mlp_dim]
 
         # 2. Initial convolution
-        h = self.conv_in(x_concat)  # [B, base_channels, H, W]
+        h = self.conv_in(x_q)  # Use quantized input
         
         skip_connections = []
 
@@ -274,4 +280,5 @@ class ConditionalUNet(nn.Module):
         h = self.conv_out_act(h)
         out_noise = self.conv_out(h)
         
+        out_noise = self.dequant(out_noise)
         return out_noise

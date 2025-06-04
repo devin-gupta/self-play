@@ -3,6 +3,7 @@ trajectory_images/
 **/.DS_Store
 checkpoints/
 tensorboard_logs/
+.cursor/
 runs/
 
 .python-version

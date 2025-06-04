@@ -6,8 +6,10 @@ from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.nn.functional as F
+import torchvision.transforms.functional as TF # Added for grayscaling
 from tqdm import tqdm
 import gc
+import argparse
 
 try:
     import psutil
@@ -18,16 +20,16 @@ except ImportError:
     print("Install with: pip install psutil")
 
 class KitchenPairDataset(Dataset):
-    def __init__(self, k_step_future=1, data_dir="data/kitchen_pairs", force_rebuild=False, 
-                 max_episodes_per_batch=5, max_frames_in_memory=200, target_size=128):
+    def __init__(self, k_step_future=10, data_dir="data/kitchen_pairs", force_rebuild=False, 
+                 max_episodes_per_batch=5, max_frames_in_memory=200, target_size=256):
         """
         Args:
-            k_step_future: Number of steps to look ahead for the next frame
+            k_step_future: Number of steps to look ahead for the next frame (default: 10)
             data_dir: Directory to store/load the dataset
             force_rebuild: If True, rebuild the dataset even if it exists
             max_episodes_per_batch: Maximum number of episodes to process at once
             max_frames_in_memory: Maximum number of frames to keep in memory
-            target_size: Size to resize images to (default: 128x128)
+            target_size: Size to resize images to (default: 256x256)
         """
         self.k = k_step_future
         self.data_dir = Path(data_dir)
@@ -48,41 +50,13 @@ class KitchenPairDataset(Dataset):
             self.pairs = self._load_pairs()
             
         print(f"Loaded {len(self.pairs)} pairs with k={k_step_future}")
-        print(f"Images pre-resized to {target_size}x{target_size}")
-        
-        # Convert to tensors for faster access
-        self._convert_to_tensors()
-    
-    def _convert_to_tensors(self):
-        """Convert all pairs to pre-processed tensors for faster training."""
-        print("Converting to tensors and pre-processing images...")
-        converted_pairs = []
-        
-        # Check if MPS is available for potential optimizations
-        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-        
-        for i, (current_frame, future_frame, dataset, episode_num, current_step) in enumerate(tqdm(self.pairs, desc="Converting to tensors")):
-            # Convert numpy arrays to tensors and normalize (fix negative stride issue)
-            current_tensor = torch.from_numpy(current_frame.copy()).float()
-            future_tensor = torch.from_numpy(future_frame.copy()).float()
-            
-            # Normalize to [-1, 1] and convert to CHW format
-            current_tensor = (current_tensor / 127.5 - 1).permute(2, 0, 1)  # [3, H, W]
-            future_tensor = (future_tensor / 127.5 - 1).permute(2, 0, 1)    # [3, H, W]
-            
-            # Keep tensors on CPU for storage efficiency, move to device during training
-            converted_pairs.append((current_tensor, future_tensor, dataset, episode_num, current_step))
-        
-        self.pairs = converted_pairs
-        print(f"Tensor conversion complete! (Device: {device})")
+        print(f"Images pre-resized to {target_size}x{target_size}, grayscaled, and stored as normalized tensors.")
     
     def _generate_pairs(self):
         """Generate frame pairs from all kitchen environment datasets."""
         # List of datasets to process
         dataset_names = [
-            # 'D4RL/kitchen/mixed-v2',
             'D4RL/kitchen/complete-v2',
-            # 'D4RL/kitchen/partial-v2'
         ]
         
         all_pairs = []
@@ -148,10 +122,8 @@ class KitchenPairDataset(Dataset):
                         # Clear frames immediately after processing
                         frames.clear()
                     
-                    if (idx + 1) % 5 == 0:  # More frequent reporting
-                        print(f"\n[Dataset: {dataset_name}, Episode {batch_start + idx + 1}]")
-                        print(f"Transitions = {transitions}")
-                        print(f"Batch pairs so far: {len(batch_pairs)}")
+                    if (idx + 1) % 20 == 0:  # Reduced frequency of reporting
+                        print(f"\n[Dataset: {dataset_name}, Episode {batch_start + idx + 1} processed in current batch]")
                         
                         # Memory monitoring
                         if PSUTIL_AVAILABLE:
@@ -195,27 +167,51 @@ class KitchenPairDataset(Dataset):
             pairs.append((resized_frames[t], resized_frames[t2], dataset_name, episode_num, current_step))
     
     def _resize_frames_batch(self, frames):
-        """Resize a batch of frames efficiently."""
-        if not frames or frames[0].shape[:2] == (self.target_size, self.target_size):
+        """Resize a batch of frames, convert to grayscale, normalize, and return as tensors."""
+        if not frames:
+            return [] # Return empty list if no frames
+        
+        # Check if already in the desired tensor format (e.g., if loaded from a new pickle)
+        # This check is more for robustness if old data format handling was mixed, but with removal of _convert_to_tensors,
+        # this function will primarily deal with numpy arrays from env.render()
+        if isinstance(frames[0], torch.Tensor) and frames[0].shape[0] == 1 and len(frames[0].shape) == 3 : # CHW [1, H, W]
+             # Assuming if the first is a tensor of [1,H,W], they all are and are already processed
+             # This case should ideally not be hit if _convert_to_tensors is removed and generation is clean.
+            print("Warning: _resize_frames_batch received tensors, assuming already processed.")
             return frames
-            
-        # Convert to tensor batch for efficient resizing
-        frames_tensor = torch.from_numpy(np.stack(frames)).float()  # [N, H, W, 3]
-        frames_tensor = frames_tensor.permute(0, 3, 1, 2)  # [N, 3, H, W]
+
+        # Convert list of HWC NumPy arrays to tensor batch [N, H, W, 3]
+        frames_np = np.stack(frames) # Expects list of arrays of same shape
+        frames_tensor = torch.from_numpy(frames_np.copy()).float() # Use .copy() if frames_np is from a non-writable buffer
+        
+        # Permute to [N, 3, H, W] for PyTorch operations
+        frames_tensor = frames_tensor.permute(0, 3, 1, 2)
         
         # Resize batch
-        resized_tensor = F.interpolate(
-            frames_tensor, 
-            size=(self.target_size, self.target_size), 
-            mode='bilinear', 
-            align_corners=False
-        )
+        if frames_tensor.shape[2] != self.target_size or frames_tensor.shape[3] != self.target_size:
+            resized_tensor = F.interpolate(
+                frames_tensor, 
+                size=(self.target_size, self.target_size), 
+                mode='bilinear', 
+                align_corners=False
+            )
+        else:
+            resized_tensor = frames_tensor # No resize needed
+
+        # Convert to Grayscale: TF.rgb_to_grayscale expects [C, H, W] or [B, C, H, W]
+        # It outputs [1, H, W] or [B, 1, H, W]
+        grayscaled_tensor = TF.rgb_to_grayscale(resized_tensor) # Output: [N, 1, H, W]
         
-        # Convert back to numpy
-        resized_tensor = resized_tensor.permute(0, 2, 3, 1)  # [N, H, W, 3]
-        resized_frames = [frame.numpy().astype(np.uint8) for frame in resized_tensor]
+        # Normalize to [-1, 1] (from [0, 255] range originally, interpolate keeps it in similar range)
+        # Grayscale output from TF.rgb_to_grayscale will be in the range of the input (e.g. 0-255 for uint8 input).
+        # Since we converted to float initially, values are 0-255.
+        normalized_tensor = (grayscaled_tensor / 127.5) - 1.0
         
-        return resized_frames
+        # Detach from computation graph and move to CPU for storage in self.pairs
+        # Split the batch into a list of individual tensors [1, H, W]
+        processed_frames_list = [t.cpu().detach() for t in torch.unbind(normalized_tensor, dim=0)]
+        
+        return processed_frames_list
     
     def _save_pairs(self):
         """Save the generated pairs to a pickle file."""
@@ -244,57 +240,67 @@ class KitchenPairDataset(Dataset):
 if __name__ == "__main__":
     # 1. Try loading existing datasets first
     print("\n=== Loading/Creating datasets ===")
-    for k in [
-        # 1,
-        # 3,
-        5,
-    ]:
-        print(f"\nTrying k={k}:")
-        try:
-            # Try to load existing dataset first with memory-efficient settings
-            dataset = KitchenPairDataset(
-                k_step_future=k, 
-                force_rebuild=False,
-                max_episodes_per_batch=3,  # Process even fewer episodes at once
-                max_frames_in_memory=100   # Keep even fewer frames in memory
-            )
-            print(f"Successfully loaded existing dataset with {len(dataset)} pairs")
-        except FileNotFoundError:
-            # If dataset doesn't exist, create it
-            print(f"No existing dataset found for k={k}, creating new one...")
-            dataset = KitchenPairDataset(
-                k_step_future=k, 
-                force_rebuild=True,
-                max_episodes_per_batch=3,
-                max_frames_in_memory=100
-            )
+    
+    # --- Add argument parsing ---
+    parser = argparse.ArgumentParser(description="Load or generate Kitchen dataset pairs.")
+    parser.add_argument(
+        "--k", 
+        type=int, 
+        default=10,  # Default k value
+        help="Number of steps to look ahead for the future frame (k_step_future)."
+    )
+    parser.add_argument(
+        "--force_rebuild",
+        action="store_true",
+        help="Force rebuild the dataset even if a pre-existing one is found."
+    )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="data/kitchen_pairs",
+        help="Directory to store/load the dataset."
+    )
+    parser.add_argument(
+        "--target_size",
+        type=int,
+        default=256,
+        help="Target size to resize images to (e.g., 256 for 256x256)."
+    )
+
+    args = parser.parse_args()
+    # --- End argument parsing ---
+
+    # Use the parsed k value
+    k_value = args.k
+    print(f"\nProcessing for k={k_value}:")
+    
+    try:
+        # Try to load existing dataset first with memory-efficient settings
+        dataset = KitchenPairDataset(
+            k_step_future=k_value,
+            data_dir=args.data_dir,
+            force_rebuild=args.force_rebuild,
+            max_episodes_per_batch=2, # Reduce for memory efficiency if needed
+            max_frames_in_memory=100, # Reduce for memory efficiency if needed
+            target_size=args.target_size 
+        )
         
-        # Test the dataset with a memory-efficient DataLoader
-        if k == 5:  # Only test with k=5
-            print("\n=== Testing DataLoader batching ===")
-            print(f"\nTotal number of pairs: {len(dataset.pairs)}")
-            print(f"Each pair contains 2 frames (current, future)")
-            
-            # Create a memory-efficient DataLoader
-            dataloader = DataLoader(
-                dataset, 
-                batch_size=2,              # Smaller batch size
-                shuffle=True,
-                num_workers=0,             # Single-threaded to avoid macOS multiprocessing issues
-                pin_memory=False,          # Disabled for MPS
-                persistent_workers=False,  # Disabled for single-threaded
-                prefetch_factor=None       # Not needed for single-threaded
-            )
-            
-            for batch_idx, (current_frames, future_frames, datasets, episode_nums, timesteps) in enumerate(dataloader):
-                print(f"\nBatch {batch_idx}:")
-                print(f"Current frames shape: {current_frames.shape}")
-                print(f"Future frames shape: {future_frames.shape}")
-                print(f"Value range: [{current_frames.min():.2f}, {current_frames.max():.2f}]")
-                print(f"Datasets: {datasets}")
-                print(f"Episode numbers: {episode_nums}")
-                print(f"Timesteps: {timesteps}")
-                
-                # Only show first batch
-                if batch_idx == 0:
-                    break
+        print(f"\n--- Dataset for k={k_value} (size: {args.target_size}x{args.target_size}) ---")
+        print(f"Total pairs: {len(dataset)}")
+        
+        # Optional: Get a sample and print its shape
+        if len(dataset) > 0:
+            current_frame, future_frame, _, _, _ = dataset[0]
+            print(f"Sample current_frame shape: {current_frame.shape}")
+            print(f"Sample future_frame shape: {future_frame.shape}")
+
+            # Verify tensor properties (optional)
+            print(f"Current frame dtype: {current_frame.dtype}, min: {current_frame.min():.2f}, max: {current_frame.max():.2f}")
+            print(f"Future frame dtype: {future_frame.dtype}, min: {future_frame.min():.2f}, max: {future_frame.max():.2f}")
+
+    except Exception as e:
+        print(f"Error processing for k={k_value}: {e}")
+        import traceback
+        traceback.print_exc()
+
+    print("\n=== Dataset processing complete. ===")

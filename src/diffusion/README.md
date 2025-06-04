@@ -291,3 +291,112 @@ If you encounter issues:
 2. Verify your environment has all dependencies
 3. Monitor TensorBoard for training diagnostics
 4. Try reducing batch size or image resolution for memory issues 
+
+# Diffusion Model Training (`train.py`)
+
+This script trains a Conditional U-Net diffusion model on (grayscale) image pairs from the Kitchen environment dataset.
+
+## Features
+
+- Trains a diffusion model to predict noise.
+- Uses grayscale images (1-channel input, 1-channel output for noise).
+- Supports command-line arguments for configuring most aspects of training, model, data, and logging.
+- Checkpointing with support for resuming from latest or best checkpoint.
+- TensorBoard logging for metrics, image samples, and hyperparameters.
+- Automatic Mixed Precision (AMP) support for CUDA devices.
+
+## Prerequisites
+
+1.  **Dataset:** Ensure you have generated the grayscale image pair dataset using `src/data_utils/dataloader.py`.
+    ```bash
+    python src/data_utils/dataloader.py --force_rebuild --k_step_future 5 --target_size 128 --data_dir data/kitchen_pairs_grayscale_k5_128
+    ```
+    (Adjust `k_step_future`, `target_size`, and `data_dir` to match your desired training configuration. The defaults in `train.py` for dataset loading are `k_step_future=5`, `img_resolution=128`, and `dataset_dir="data/kitchen_pairs"`. You might want to use a more specific dataset directory for grayscale data, e.g., `data/kitchen_pairs_grayscale_k5_128`).
+
+2.  **Dependencies:** Make sure all dependencies from `requirements.txt` are installed.
+
+## Running Training
+
+Execute the script from the root directory of the project:
+
+```bash
+python src/diffusion/train.py [OPTIONS]
+```
+
+### Example Usage
+
+**Start new training with default parameters (MPS or CPU):**
+```bash
+python src/diffusion/train.py --img_resolution 128 --batch_size 4 --epochs 50 --k_step_future 5 --dataset_dir data/kitchen_pairs_grayscale_k5_128 --tensorboard_log_dir data/diffusion/tb_logs_gray --checkpoint_dir data/diffusion/ckpt_gray
+```
+
+**Train on CUDA with AMP enabled:**
+```bash
+python src/diffusion/train.py --device cuda --img_resolution 128 --batch_size 8 --epochs 100 --learning_rate 0.0002 --k_step_future 5 --dataset_dir path/to/your/grayscale_dataset --log_images
+```
+
+**Resume training from the latest checkpoint:**
+```bash
+python src/diffusion/train.py --resume_from_checkpoint latest --checkpoint_dir data/diffusion/ckpt_gray
+# (Ensure other parameters like model architecture match the checkpoint if not using defaults)
+```
+
+**Specify model architecture details:**
+```bash
+python src/diffusion/train.py \
+    --model_base_channels 64 \
+    --model_channel_mults "1,2,4,4" \
+    --model_num_res_blocks 2 \
+    --model_attention_resolutions_divisor 8 \
+    --img_resolution 256 \
+    # ... other args ...
+```
+
+### Command-Line Arguments
+
+**Environment & Data:**
+*   `--device {cpu,mps,cuda}`: Device for training. Default: mps or cpu.
+*   `--dataset_dir STR`: Root directory for the dataset. Default: `data/kitchen_pairs`.
+*   `--k_step_future INT`: k-step future for KitchenPairDataset. Default: 5.
+*   `--force_rebuild_dataset`: Force rebuild of the dataset. Default: False.
+*   `--num_workers_loader INT`: Number of DataLoader workers. Default: 0.
+
+**Training Hyperparameters:**
+*   `--epochs INT`: Number of training epochs. Default: 100.
+*   `--batch_size INT`: Batch size. Default: 2.
+*   `--learning_rate FLOAT`: Learning rate. Default: 1e-4.
+*   `--disable_amp`: Disable AMP even if on CUDA. Default: False (AMP enabled on CUDA).
+
+**Diffusion Process:**
+*   `--diffusion_timesteps INT`: Number of diffusion timesteps. Default: 1000.
+*   `--beta_start FLOAT`: Beta start for linear schedule. Default: 0.0001.
+*   `--beta_end FLOAT`: Beta end for linear schedule. Default: 0.02.
+
+**Model Architecture (Grayscale: `in_img_channels` fixed to 2, `out_img_channels` fixed to 1):**
+*   `--img_resolution INT`: Image resolution for training and model. Default: 128.
+*   `--model_base_channels INT`: Base channels for U-Net. Default: 32.
+*   `--model_channel_mults STR`: Channel multipliers (e.g., '1,2,3'). Default: "1,2,3".
+*   `--model_num_res_blocks INT`: Residual blocks per U-Net level. Default: 1.
+*   `--model_attention_resolutions_divisor INT`: Attention at `img_resolution // X`. Default: 4.
+*   `--model_time_emb_dim INT`: Dimension of sinusoidal time embedding. Default: 128.
+*   `--model_time_emb_mlp_dim INT`: Dimension of MLP for time embedding. Default: 512.
+*   `--model_dropout_rate FLOAT`: Dropout rate in U-Net residual blocks. Default: 0.1.
+
+**Checkpointing & Resuming:**
+*   `--checkpoint_dir STR`: Directory to save checkpoints. Default: `data/diffusion/checkpoints_grayscale`.
+*   `--checkpoint_freq INT`: Save checkpoint every N epochs. Default: 5.
+*   `--save_best_model`: Save model with best validation loss (currently best training loss). Default: False.
+*   `--resume_from_checkpoint {latest,best,none,PATH}`: Checkpoint to resume from. Default: `latest`.
+
+**TensorBoard Logging:**
+*   `--tensorboard_log_dir STR`: Directory for TensorBoard logs. Default: `data/diffusion/tensorboard_logs_grayscale`.
+*   `--tensorboard_run_name_prefix STR`: Prefix for TensorBoard run name. Default: `diffusion_grayscale_train`.
+*   `--log_freq INT`: Log scalars every N batches. Default: 10.
+*   `--log_images`: Log sample images. Default: False.
+*   `--log_image_freq_multiplier INT`: Log images every (log_freq * M) steps. Default: 10.
+
+## Important Notes for Grayscale Training
+
+- The `ConditionalUNet` model is configured with `in_img_channels=2` (concatenated current and future/noisy grayscale frames) and `out_img_channels=1` (predicting noise for a single grayscale channel).
+- Ensure your dataset in `dataset_dir` is generated with grayscale images (1 channel) and normalized tensors, as produced by the updated `src/data_utils/dataloader.py`.
+- When resuming from a checkpoint, ensure that the model architecture parameters specified (or their defaults) match the architecture stored in the checkpoint if you expect the weights to load correctly. 
