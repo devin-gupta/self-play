@@ -1,16 +1,34 @@
 import gymnasium as gym
 import gymnasium_robotics
 from utils.custom_franka_env import CustomFrankaEnv
+from utils.simple_net import SimpleNet
+import torch
+from PIL import Image
 
 gym.register_envs(gymnasium_robotics)
 
-env = CustomFrankaEnv(gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='human'))
+env = CustomFrankaEnv(gym.make(
+    'FrankaKitchen-v1', 
+    object_noise_ratio=0.0, 
+    robot_noise_ratio=0.0, 
+    tasks_to_complete=['kettle'], 
+    render_mode='rgb_array'
+))
+
+print('observation space: ', env.observation_space)
+print('action space: ', env.action_space)
+
+actor = SimpleNet()
 
 obs, info = env.reset()
 for _ in range(50):
-    action = env.action_space.sample()  # Sample a random action
-    obs, reward, terminated, truncated, info = env.step(action)  # Take the action in the environment
-    print('reward: ', reward)
+    # action = actor(torch.tensor(obs))[0]
+    action = env.action_space.sample()
+    # obs, reward, terminated, truncated, info = env.step(action.detach().numpy())  # Take the action in the environment
+    obs, reward, terminated, truncated, info = env.step(action)
     env.render()  # Render the environment
 
-env.close()  # Close the environment when done
+    if terminated:
+        break
+
+env.close()
