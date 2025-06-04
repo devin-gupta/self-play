@@ -84,7 +84,7 @@ def init_tensorboard_writer(base_log_dir: Path, run_name_prefix: str = "run", ru
     create_directory(log_dir, "TensorBoard run")
     writer = SummaryWriter(log_dir=str(log_dir))
     print(f"TensorBoard logging to: {log_dir}")
-    print(f"Start TensorBoard with: tensorboard --logdir={base_log_dir.parent}") # Suggest parent for overview
+    print(f"Start TensorBoard with: tensorboard --logdir={base_log_dir}") # Corrected: use base_log_dir directly
     return writer
 
 def log_images_to_tensorboard(writer: SummaryWriter, current_img: torch.Tensor, target_next_img: torch.Tensor, 
