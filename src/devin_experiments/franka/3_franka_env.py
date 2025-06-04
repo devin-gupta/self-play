@@ -12,7 +12,8 @@ env = CustomFrankaEnv(gym.make(
     object_noise_ratio=0.0, 
     robot_noise_ratio=0.0, 
     tasks_to_complete=['kettle'], 
-    render_mode='rgb_array'
+    render_mode='rgb_array',
+    max_episode_steps=50,
 ))
 
 print('observation space: ', env.observation_space)
@@ -26,7 +27,8 @@ for _ in range(50):
     action = env.action_space.sample()
     # obs, reward, terminated, truncated, info = env.step(action.detach().numpy())  # Take the action in the environment
     obs, reward, terminated, truncated, info = env.step(action)
-    env.render()  # Render the environment
+    assert env.observation_space.contains(obs), 'Observation is not in the observation space'
+    # env.render()  # Render the environment
 
     if terminated:
         break
