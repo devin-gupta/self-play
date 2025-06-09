@@ -8,9 +8,15 @@ from utils.custom_franka_env import CustomFrankaEnv
 import os
 from torch.utils.tensorboard import SummaryWriter # Import SummaryWriter
 import datetime # For creating unique log directories
+import argparse
 
 # Register the environment
 gym.register_envs(gymnasium_robotics)
+
+# --- Argument Parser ---
+parser = argparse.ArgumentParser(description="Train a DQN agent for the FrankaKitchen environment.")
+parser.add_argument("--model_checkpoint_path", type=str, required=True, help="Path to the .pth model checkpoint file for the diffusion model.")
+args = parser.parse_args()
 
 # --- Device Setup ---
 if torch.backends.mps.is_available():
@@ -60,7 +66,10 @@ DISCRETE_ACTIONS = [
 ]
 NUM_DISCRETE_ACTIONS = len(DISCRETE_ACTIONS)
 
-env = CustomFrankaEnv(gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle']))
+env = CustomFrankaEnv(
+    gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle']),
+    model_checkpoint_path=args.model_checkpoint_path
+)
 observation_space_size = env.observation_space['observation'].shape[0]
 
 # --- Initialize Agent ---
@@ -173,7 +182,10 @@ print("Training complete!")
 
 # --- Visualization after training ---
 print("\nStarting visualization of trained agent...")
-env = CustomFrankaEnv(gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='human'))
+env = CustomFrankaEnv(
+    gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='human'),
+    model_checkpoint_path=args.model_checkpoint_path
+)
 
 # Create a *new* agent instance for visualization
 visualization_agent = DQNAgent(
