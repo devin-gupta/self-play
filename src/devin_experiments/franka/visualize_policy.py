@@ -6,10 +6,19 @@ from utils.qnet import QNetwork, ReplayBuffer # Import QNetwork from q_network.p
 from utils.dqn_agent import DQNAgent # Import DQNAgent from dqn_agent.py
 from utils.custom_franka_env import CustomFrankaEnv # Import the custom wrapper for FrankaKitchen-v1
 import os # Import os for path manipulation
+import argparse
+
+# --- Argument Parser ---
+parser = argparse.ArgumentParser(description="Visualize a trained DQN agent for the FrankaKitchen environment.")
+parser.add_argument("--model_checkpoint_path", type=str, required=True, help="Path to the .pth model checkpoint file for the diffusion model.")
+args = parser.parse_args()
 
 # --- Visualization after training ---
 print("\nStarting visualization of trained agent...")
-env = CustomFrankaEnv(gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='human'))
+env = CustomFrankaEnv(
+    gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='human'),
+    model_checkpoint_path=args.model_checkpoint_path
+)
 
 # --- Hyperparameters ---
 LEARNING_RATE = 0.001
