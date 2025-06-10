@@ -9,7 +9,7 @@ from utils.custom_franka_env import CustomFrankaEnv # Import your custom environ
 from utils.ac_agent import ACAgent # Import your agent
 from utils.franka_viewer import FrankaKitchenViewer
 
-def train_agent(env, num_episodes=30, gamma=0.99, actor_lr=1e-4, critic_lr=1e-3, log_dir='runs/franka_training/5'):
+def train_agent(env, num_episodes=30, gamma=0.5, actor_lr=1e-4, critic_lr=1e-3, log_dir='runs/franka_training/6'):
     # Initialize TensorBoard writer
     writer = SummaryWriter(log_dir=log_dir)
     
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     env = CustomFrankaEnv(dummy_base_env, goal_step_offset=2)
 
     print("Starting training...")
-    trained_agent, rewards_history = train_agent(env, num_episodes=5000, actor_lr=0.01, critic_lr=0.01)
+    trained_agent, rewards_history = train_agent(env, num_episodes=1000, actor_lr=0.001, critic_lr=0.001)
     print("Training finished.")
 
     # Plot rewards

@@ -6,6 +6,8 @@ tensorboard_logs/
 .cursor/
 runs/
 
+logs/
+
 .python-version
 
 # Byte-compiled / optimized / DLL files
