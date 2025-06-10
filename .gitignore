@@ -8,6 +8,8 @@ runs/
 sweep_checkpoints/
 sweep_tensorboard_logs/
 
+logs/
+
 .python-version
 
 # Byte-compiled / optimized / DLL files
