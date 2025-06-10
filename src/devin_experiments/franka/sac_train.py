@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import os
 import datetime
+import argparse
 from stable_baselines3 import SAC
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
@@ -15,6 +16,11 @@ import imageio # Import imageio for GIF creation
 
 # Register the environment
 gym.register_envs(gymnasium_robotics)
+
+# --- Argument Parser ---
+parser = argparse.ArgumentParser(description="Train an SAC agent for the FrankaKitchen environment.")
+parser.add_argument("--model_checkpoint_path", type=str, required=True, help="Path to the .pth model checkpoint file for the diffusion model.")
+args = parser.parse_args()
 
 # --- Device Setup ---
 # Stable Baselines3 automatically handles device selection based on availability.
@@ -47,10 +53,13 @@ os.makedirs(VIDEO_SAVE_PATH, exist_ok=True)
 # which is continuous. You don't need DISCRETE_ACTIONS here.
 
 # Define a function to create the environment, essential for make_vec_env and EvalCallback
-def make_env(render_mode=None):
+def make_env(model_checkpoint_path, render_mode=None):
     # Make sure to set render_mode='rgb_array' for training if you want to record videos later,
     # and 'human' for visualization.
-    env = CustomFrankaEnv(gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode=render_mode))
+    env = CustomFrankaEnv(
+        gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode=render_mode),
+        model_checkpoint_path=model_checkpoint_path
+    )
     # Wrap the environment with Monitor to record rewards and episode lengths
     env = Monitor(env) # Monitor should typically be the outermost wrapper after gym.make()
     return env
@@ -58,11 +67,11 @@ def make_env(render_mode=None):
 # Create a vectorized environment for training
 # VecNormalize is often used with continuous action spaces to normalize observations
 # and sometimes rewards, which can significantly improve performance.
-train_env = make_vec_env(lambda: make_env(render_mode='rgb_array'), n_envs=1)
+train_env = make_vec_env(lambda: make_env(model_checkpoint_path=args.model_checkpoint_path, render_mode='rgb_array'), n_envs=1)
 train_env = VecNormalize(train_env, norm_obs=True, norm_reward=False) # Normalize observations
 
 # Create a separate environment for evaluation with rgb_array for video recording
-eval_env = make_vec_env(lambda: make_env(render_mode='rgb_array'), n_envs=1)
+eval_env = make_vec_env(lambda: make_env(model_checkpoint_path=args.model_checkpoint_path, render_mode='rgb_array'), n_envs=1)
 eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False) # Use the same normalization as train_env
 
 # --- TensorBoard Setup ---
@@ -153,7 +162,7 @@ print(f"\nGenerating {NUM_VIDEO_ROLLOUTS} rollout GIFs from the trained model...
 # Create a separate *vectorized* environment for video rendering
 # It's crucial that this environment is also normalized if the model expects normalized observations.
 # We'll create a vectorized environment (even if n_envs=1) so it's compatible with VecNormalize and VecVideoRecorder.
-video_eval_env = make_vec_env(lambda: make_env(render_mode='rgb_array'), n_envs=1)
+video_eval_env = make_vec_env(lambda: make_env(model_checkpoint_path=args.model_checkpoint_path, render_mode='rgb_array'), n_envs=1)
 video_eval_env = VecNormalize(video_eval_env, norm_obs=True, norm_reward=False)
 
 # Load VecNormalize statistics for the video environment

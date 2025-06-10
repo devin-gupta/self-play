@@ -6,6 +6,11 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import torchvision
 import torch
+import sys
+import os
+from src.diffusion.inference import Inference
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
 class CustomFrankaEnv(gym.Wrapper):
     """
@@ -13,7 +18,7 @@ class CustomFrankaEnv(gym.Wrapper):
     1. Define a custom reward function.
     2. Flatten the observation space to be compatible with Stable Baselines3 (SAC).
     """
-    def __init__(self, env):
+    def __init__(self, env, model_checkpoint_path: str):
         super().__init__(env)
         self.base_env = env
         self.observation_space = spaces.Dict({
@@ -28,6 +33,7 @@ class CustomFrankaEnv(gym.Wrapper):
             ),
         })
         self.action_space = self.base_env.action_space
+        self.inference = Inference(model_checkpoint_path)
 
     def get_curr_image(self):
         img = Image.fromarray(self.base_env.render())
@@ -36,10 +42,20 @@ class CustomFrankaEnv(gym.Wrapper):
         return np.array(img, dtype = np.uint8)
     
     def get_goal_image(self):
-        img = Image.open('goal_image.png')
-        img = torchvision.transforms.functional.rgb_to_grayscale(img, num_output_channels=1)
-        img = torchvision.transforms.functional.resize(img, (120, 120))
-        return np.array(img, dtype = np.uint8)
+        # Get the current state image
+        current_image = self.get_curr_image() # Shape: (120, 120), dtype: uint8
+
+        # Add a channel dimension to match the model's expected input shape (1, 120, 120)
+        current_image_expanded = np.expand_dims(current_image, axis=0)
+        
+        # Predict the goal image using the diffusion model
+        # The predict method returns a (1, 120, 120) numpy array of dtype uint8
+        predicted_goal_image = self.inference.predict(current_image_expanded)
+
+        # Remove the channel dimension to get shape (120, 120) as used in the rest of the class
+        goal_img = predicted_goal_image.squeeze(0)
+        
+        return goal_img
     
     def generate_observation(self):
         curr_img = self.get_curr_image()

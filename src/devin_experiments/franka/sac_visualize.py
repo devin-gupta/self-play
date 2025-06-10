@@ -2,6 +2,7 @@ import gymnasium as gym
 import gymnasium_robotics
 import numpy as np
 import os
+import argparse
 from stable_baselines3 import SAC
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import VecNormalize
@@ -15,19 +16,25 @@ from utils.custom_franka_env import CustomFrankaEnv
 # Register the environment
 gym.register_envs(gymnasium_robotics)
 
+# --- Argument Parser ---
+parser = argparse.ArgumentParser(description="Visualize a trained SAC agent for the FrankaKitchen environment.")
+parser.add_argument("--model_checkpoint_path", type=str, required=True, help="Path to the .pth model checkpoint file for the diffusion model.")
+args = parser.parse_args()
+
+
 # --- Configuration ---
 # Define the path where your model is saved
 MODEL_SAVE_PATH = "sac_franka_kitchen_model"
 
 # --- Environment Setup Function (re-defined for this script) ---
 # This function now correctly prepares a single environment for make_vec_env
-def create_single_franka_env_for_vec():
+def create_single_franka_env_for_vec(model_checkpoint_path):
     """
     Creates a single FrankaKitchen environment wrapped with CustomFrankaEnv and Monitor,
     configured for human rendering. This function is designed to be passed to make_vec_env.
     """
     base_env = gym.make('FrankaKitchen-v1', tasks_to_complete=['kettle'], render_mode='human')
-    wrapped_env = CustomFrankaEnv(base_env)
+    wrapped_env = CustomFrankaEnv(base_env, model_checkpoint_path=model_checkpoint_path)
     monitored_env = Monitor(wrapped_env)
     return monitored_env
 
@@ -37,7 +44,7 @@ print("\nStarting visualization of trained agent...")
 # Use make_vec_env to create the vectorized environment chain for visualization
 # This ensures that render_env_normalized is indeed a VecEnv, which VecNormalize expects.
 # We set n_envs=1 because we only need one environment for visualization.
-render_env_normalized = make_vec_env(create_single_franka_env_for_vec, n_envs=1)
+render_env_normalized = make_vec_env(lambda: create_single_franka_env_for_vec(args.model_checkpoint_path), n_envs=1)
 print(f"CustomFrankaEnv: New observation space shape: {render_env_normalized.observation_space.shape}") # This will print the shape from your CustomFrankaEnv's __init__
 
 
