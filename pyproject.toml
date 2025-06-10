@@ -49,4 +49,5 @@ dependencies = [
     "tensorboard>=2.19.0",
     "psutil>=7.0.0",
     "torchvision>=0.22.0",
+    "stable-baselines3>=2.6.0",
 ]

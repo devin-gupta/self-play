@@ -133,7 +133,7 @@ class ConditionalUNet(nn.Module):
         time_emb_mlp_dim=1024, # Dimension of MLP for time embedding
         num_heads_attn=8,
         num_groups_norm=32,
-        initial_img_resolution=480,
+        initial_img_resolution=120,
     ):
         super().__init__()
 

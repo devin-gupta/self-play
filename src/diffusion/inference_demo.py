@@ -252,7 +252,7 @@ class DiffusionInference:
 
 def main():
     # Configuration
-    CHECKPOINT_PATH = "data/diffusion/checkpoints/model_v3/best_model.pth" # Old example
+    CHECKPOINT_PATH = "data/diffusion/checkpoints/model_v3/checkpoint_epoch_084.pth" # Old example
     # Default path for checkpoints saved by train.py with default args
     #CHECKPOINT_PATH = "data/diffusion/checkpoints_grayscale/best_model.pth" 
     

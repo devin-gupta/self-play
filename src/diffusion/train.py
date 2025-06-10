@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
                         help="Directory for TensorBoard logs.")
     parser.add_argument("--tensorboard_run_name_prefix", type=str, default="diffusion_grayscale_train", 
                         help="Prefix for TensorBoard run name.")
-    parser.add_argument("--log_freq", type=int, default=10, help="Log scalars to TensorBoard every N batches.")
+    parser.add_argument("--log_freq", type=int, default=5, help="Log scalars to TensorBoard every N batches.")
     parser.add_argument("--log_images", action="store_true", help="Log sample images to TensorBoard.")
     parser.add_argument("--log_image_freq_multiplier", type=int, default=10, 
                         help="Log images every (log_freq * M) steps. e.g., if log_freq=10, M=10, log images every 100 steps.")
