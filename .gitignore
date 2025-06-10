@@ -6,7 +6,7 @@ tensorboard_logs/
 .cursor/
 runs/
 
-logs/
+0_logs/
 
 .python-version
 
