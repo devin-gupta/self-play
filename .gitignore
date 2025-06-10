@@ -5,6 +5,8 @@ checkpoints/
 tensorboard_logs/
 .cursor/
 runs/
+sweep_checkpoints/
+sweep_tensorboard_logs/
 
 .python-version
 
